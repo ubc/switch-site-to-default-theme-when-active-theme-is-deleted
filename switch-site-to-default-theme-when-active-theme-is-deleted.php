@@ -15,9 +15,10 @@
 
 	/*
 	 * When a theme gets deleted, WordPress fires the 'delete_site_transient_update_themes' action before it deletes the transient.
-	 * We're able to get the 'update_themes' transient (i.e. '_site_transient_update_themes' option in PREFIX_sitemeta) so we have a 
-	 * record of which themes were available before deletion. We set that transient result to a class variable so that later, when the 
-	 * 'deleted_site_transient' action fires we're able to get the result of the transient again so we can compare before and after to
+	 * We're *should* be able to get the 'update_themes' transient (i.e. '_site_transient_update_themes' option in PREFIX_sitemeta) so 
+	 * we have a record of which themes were available before deletion. Sadly, we can't, so we have to use the $_REQUEST.
+	 * We set that value  to a class variable so that later, when the 
+	 * 'deleted_site_transient' action fires we're able to get the result again so we can compare before and after to
 	 * determine which theme/themes have been deleted.
 	*/
 
@@ -104,7 +105,6 @@
 				return;
 			}
 
-			// So, we have some 'differences' - it's an array of theme slugs that have just been deleted.
 			// Now we need to determine which sites in the network are running those themes
 			foreach( $beforeDeleted as $key => $themeSlug )
 			{
@@ -114,8 +114,7 @@
 
 			}
 			
-			// Now, $this->sitesRunningDeletedTheme contains an array of sites which are running a theme
-			// which has been deleted. We need to go ahead and switch the sites running those themes
+			// We need to go ahead and switch the sites running those themes
 			// to the default theme
 			$existing = get_site_option( 'sites_running_deleted_theme' );
 			if( !$existing || !is_array( $existing ) || empty( $existing ) ){
@@ -129,13 +128,17 @@
 
 			}
 
+			// Now we need to clear that option
+			delete_site_option( 'sites_running_deleted_theme' );
+
 		}/* deleted_site_transient__captureThemesAfterDeltion() */
 
 
 		/**
 		 * Search through the database for sites running a particular theme and add to $this->sitesRunningDeletedTheme
 		 * Each site, in the wp_#_options table has 'template' and 'stylesheet' options which is set to the slug of
-		 * the theme name (i.e. 'twentyfourteen')
+		 * the theme name (i.e. 'twentyfourteen'), so there's poissibly a more efficient way to find this data than using
+		 * switch_to_blog.
 		 *
 		 * @since 0.1
 		 *
@@ -150,12 +153,13 @@
 			do_action( 'sstdtwacid_before_determine_sites', $themeSlug );
 
 			// We may have an alternative way to determine if there's a site running a theme
+			// This might be especially useful on a large install
 			$sitesRunningThisTheme = apply_filters( 'sstdtwacid_sites_running_' . $themeSlug, array(), $themeSlug );
 
 			if( is_array( $sitesRunningThisTheme ) && !empty( $sitesRunningThisTheme ) )
 			{
 
-				// Looks like we have some results from the filter, so let's add them to our class variable
+				// Looks like we have some results from the filter, so let's add themß
 				foreach( $sitesRunningThisTheme as $key => $siteID )
 				{
 					
@@ -177,7 +181,9 @@
 					'limit'      => false
 				);
 
-				$allSites = wp_get_sites();
+				$allSitesArgs = apply_filters( 'sstdtwacid_get_site_args', $allSitesArgs, $themeSlug );
+
+				$allSites = wp_get_sites( $allSitesArgs );
 
 				if( !$allSites || !is_array( $allSites ) || empty( $allSites ) ){
 					return;
@@ -195,7 +201,7 @@
 					if( $themeSlug == $thisSitesCurrentTheme )
 					{
 
-						// Means we're out of object context
+						// switch_to_blog()å means we're out of object context, so need to call this statically
 						static::addSiteToSitesRunningDeletedTheme( $siteID );
 
 					}
@@ -214,8 +220,8 @@
 		 *
 		 * @since 0.1
 		 *
-		 * @param string $param description
-		 * @return string|int returnDescription
+		 * @param int $siteID the ID of the site we wish to switch to the default theme
+		 * @return null
 		 */
 
 		public static function switchSiteToDefaultTheme( $siteID = false )
@@ -233,7 +239,7 @@
 		 *
 		 * @param int $siteID The siteID for which we wish to switch themes
 		 * @param string $themeSlug The slug of the theme to which we wish to change $siteID
-		 * @return string|int returnDescription
+		 * @return null
 		 */
 
 		public static function switchSiteToTheme( $siteID = false, $themeSlug = false )
@@ -267,8 +273,8 @@
 		 *
 		 * @since 0.1
 		 *
-		 * @param string $param description
-		 * @return string|int returnDescription
+		 * @param int $siteID The site ID to add to the option
+		 * @return null
 		 */
 
 		public static function addSiteToSitesRunningDeletedTheme( $siteID = false )
